@@ -141,13 +141,15 @@ pub fn main() !void {
     var N: usize = 1;
     var backing_array_list = std.ArrayList(Tp).init(allocator);
     defer backing_array_list.deinit();
+    var sum_logs: f64 = 0;
+    var num_entries: f64 = 0;
     while (N < max_bytes) {
         defer N = (N + 99) * 101 / 100;
         backing_array_list.clearRetainingCapacity();
         const buffer = try backing_array_list.addManyAsSlice(N);
         for (0..N) |i| buffer[i] = @intCast(i);
 
-        if (N < 10000)
+        if (N < 1_000_000) // flushing big buffers makes the benchmark run super slowly
             clflush(Tp, buffer);
 
         var new_i: u32 = 0;
@@ -168,7 +170,7 @@ pub fn main() !void {
         }
 
         for (0..N) |i| buffer[i] = @intCast(i);
-        if (N < 10000)
+        if (N < 1_000_000) // flushing big buffers makes the benchmark run super slowly
             clflush(Tp, buffer);
 
         var old_i: u32 = 0;
@@ -191,12 +193,17 @@ pub fn main() !void {
         const new_cycles_per_byte = @as(f64, @floatFromInt(new_ns)) / @as(f64, @floatFromInt(repeats * iterations_per_byte));
         const old_cycles_per_byte = @as(f64, @floatFromInt(old_ns)) / @as(f64, @floatFromInt(repeats * iterations_per_byte));
 
+        sum_logs += @log(old_cycles_per_byte / new_cycles_per_byte);
+        num_entries += 1.0;
+
         try stdout.writer().print("{},{d:.4},{d:.4}\n", .{
             N * @sizeOf(Tp),
             new_cycles_per_byte,
             old_cycles_per_byte,
         });
     }
+
+    std.debug.print("geomean speedup: {d:.4}%\n", .{@exp(sum_logs / num_entries) * 100 - 100});
 }
 inline fn rdtsc() usize {
     var a: u32 = undefined;
