@@ -215,7 +215,7 @@ pub fn main() !void {
     const time_reduction = (old_geo_mean - new_geo_mean) / old_geo_mean * 100;
     const speedup_percent = old_geo_mean / new_geo_mean * 100 - 100;
 
-    std.debug.print("geomean speedup: {d:.4}% (time taken reduced by average of {d:.4}%)\n", .{speedup_percent, time_reduction});
+    std.debug.print("speedup: {d:.4}% (time taken reduced by average of {d:.4}%) (NOTE: *almost* meaningless metric, see graph)\n", .{speedup_percent, time_reduction});
 }
 
 inline fn rdtsc() usize {
