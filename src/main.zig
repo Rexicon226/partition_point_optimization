@@ -33,6 +33,7 @@ pub fn partitionPointNew(
         const half: usize = len / 2;
         len -= half;
         if (predicate(context, items[it + half - 1])) {
+            @branchHint(.unpredictable);
             it += half;
         }
     }
@@ -161,7 +162,7 @@ pub fn main() !void {
                 std.mem.doNotOptimizeAway(partitionPointNew(
                     Tp,
                     buffer,
-                    rand.int(Tp),
+                    rand.intRangeAtMost(Tp, 0, @intCast(N)),
                     lower,
                 ));
 
@@ -170,7 +171,7 @@ pub fn main() !void {
         }
 
         for (0..N) |i| buffer[i] = @intCast(i);
-        if (N < 1_000_000) // flushing big buffers makes the benchmark run super slowly
+        if (N < 1_000_000) // flushing big buffers makes the benchmark run super slowly, doesnt seem to affect result
             clflush(Tp, buffer);
 
         var old_i: u32 = 0;
@@ -182,7 +183,7 @@ pub fn main() !void {
                 std.mem.doNotOptimizeAway(partitionPoint(
                     Tp,
                     buffer,
-                    rand.int(Tp),
+                    rand.intRangeAtMost(Tp, 0, @intCast(N)),
                     lower,
                 ));
 
