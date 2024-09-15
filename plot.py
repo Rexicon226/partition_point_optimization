@@ -47,8 +47,9 @@ def main():
     simple_formatter = lambda x, _: "%0.1f" % x
     plt.gca().yaxis.set_major_formatter(tkr.FuncFormatter(simple_formatter))
     plt.gca().yaxis.set_minor_formatter(tkr.FuncFormatter(simple_formatter))
+    plt.gca().grid(True, which="major", linestyle="--", linewidth=1)
     
-    plt.gca().yaxis.set_major_locator(tkr.LogLocator(base=10.0, subs=range(10), numticks=10))
+    plt.gca().yaxis.set_major_locator(tkr.LogLocator(base=10.0, subs=list(range(0, 10, 2)), numticks=1))
     plt.legend()
 
     plt.savefig("graph.png")

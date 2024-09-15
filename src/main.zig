@@ -142,10 +142,14 @@ pub fn main() !void {
     var N: usize = 1;
     var backing_array_list = std.ArrayList(Tp).init(allocator);
     defer backing_array_list.deinit();
-    var sum_logs: f64 = 0;
+    var new_sum_logs: f64 = 0;
+    var old_sum_logs: f64 = 0;
     var num_entries: f64 = 0;
+
+    const Factor = 200;
+
     while (N < max_bytes) {
-        defer N = (N + 99) * 101 / 100;
+        defer N = (N * (Factor + 1) + Factor - 1) / Factor;
         backing_array_list.clearRetainingCapacity();
         const buffer = try backing_array_list.addManyAsSlice(N);
         for (0..N) |i| buffer[i] = @intCast(i);
@@ -194,7 +198,8 @@ pub fn main() !void {
         const new_cycles_per_byte = @as(f64, @floatFromInt(new_ns)) / @as(f64, @floatFromInt(repeats * iterations_per_byte));
         const old_cycles_per_byte = @as(f64, @floatFromInt(old_ns)) / @as(f64, @floatFromInt(repeats * iterations_per_byte));
 
-        sum_logs += @log(old_cycles_per_byte / new_cycles_per_byte);
+        new_sum_logs += @log(new_cycles_per_byte);
+        old_sum_logs += @log(old_cycles_per_byte);
         num_entries += 1.0;
 
         try stdout.writer().print("{},{d:.4},{d:.4}\n", .{
@@ -204,8 +209,15 @@ pub fn main() !void {
         });
     }
 
-    std.debug.print("geomean speedup: {d:.4}%\n", .{@exp(sum_logs / num_entries) * 100 - 100});
+    const new_geo_mean = @exp(new_sum_logs / num_entries);
+    const old_geo_mean = @exp(old_sum_logs / num_entries);
+
+    const time_reduction = (old_geo_mean - new_geo_mean) / old_geo_mean * 100;
+    const speedup_percent = old_geo_mean / new_geo_mean * 100 - 100;
+
+    std.debug.print("geomean speedup: {d:.4}% (time taken reduced by average of {d:.4}%)\n", .{speedup_percent, time_reduction});
 }
+
 inline fn rdtsc() usize {
     var a: u32 = undefined;
     var b: u32 = undefined;
