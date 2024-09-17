@@ -25,8 +25,8 @@ def main():
 
     df_to_plot = df
 
-    plt.plot(df_to_plot["size"], df_to_plot["new"].rolling(15).median(), label="new (branchless)")
-    plt.plot(df_to_plot["size"], df_to_plot["old"].rolling(15).median(), label="old")
+    plt.plot(df_to_plot["size"], df_to_plot["new"].rolling(20).median(), label="new")
+    plt.plot(df_to_plot["size"], df_to_plot["old"].rolling(20).median(), label="old")
     
 
     plt.xlabel("size(bytes)")
@@ -44,7 +44,7 @@ def main():
     plt.gca().grid(True, which="major", axis="x", linestyle="--", linewidth=1)
     
     plt.gca().yaxis.set_major_locator(tkr.LogLocator(base=10.0, subs=[], numticks=1))
-    plt.gca().yaxis.set_minor_locator(tkr.LogLocator(base=10.0, subs=list(range(0, 10, 2)), numticks=1))
+    plt.gca().yaxis.set_minor_locator(tkr.LogLocator(base=10.0, subs=range(10), numticks=1))
     plt.legend()
 
     plt.title("partition point benchmark")

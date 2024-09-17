@@ -105,9 +105,14 @@ test partitionPointNew {
 
 const allocator = std.heap.c_allocator;
 
-const iterations_per_byte = 1000;
-const repeats = 64;
-const warmup_iterations = 10;
+const iterations_per_byte = 1024;
+const warmup_iterations = 64;
+const repeats = 16;
+
+comptime {
+    std.debug.assert(iterations_per_byte % repeats == 0);
+    std.debug.assert(warmup_iterations % repeats == 0);
+}
 
 // #20357
 pub fn sched_setaffinity(pid: std.os.linux.pid_t, set: *const std.os.linux.cpu_set_t) !void {
@@ -127,21 +132,26 @@ fn lower(context: Tp, item: Tp) bool {
 
 pub fn main() !void {
     // Pin the process to a single core (1)
-    const cpu0001: std.os.linux.cpu_set_t = [1]usize{0b0001} ++ ([_]usize{0} ** (16 - 1));
-    try sched_setaffinity(0, &cpu0001);
+    if (@import("builtin").os.tag == .linux) {
+        const cpu0001: std.os.linux.cpu_set_t = [1]usize{0b0001} ++ ([_]usize{0} ** (16 - 1));
+        try sched_setaffinity(0, &cpu0001);
+    }
 
-    const loops = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, loops);
+    const max_bytes = 1 << 24;
+    var file = try std.fs.cwd().createFile("data.txt", .{});
+    defer file.close();
+    const stdout = file;
 
-    const max_bytes = try std.fmt.parseInt(usize, loops[1], 10);
-    const stdout = std.io.getStdOut();
-
-    var rng = std.Random.DefaultPrng.init(0);
-    const rand = rng.random();
+    // var rng = std.Random.DefaultPrng.init(0);
+    // const rand = rng.random();
 
     var N: usize = 1;
-    var backing_array_list = std.ArrayList(Tp).init(allocator);
-    defer backing_array_list.deinit();
+    var buffer_array_list = std.ArrayList(Tp).init(allocator);
+    defer buffer_array_list.deinit();
+
+    const queries = try allocator.alloc(Tp, iterations_per_byte + warmup_iterations);
+    defer allocator.free(queries);
+
     var new_sum_logs: f64 = 0;
     var old_sum_logs: f64 = 0;
     var num_entries: f64 = 0;
@@ -150,53 +160,74 @@ pub fn main() !void {
 
     while (N < max_bytes) {
         defer N = (N * (Factor + 1) + Factor - 1) / Factor;
-        backing_array_list.clearRetainingCapacity();
-        const buffer = try backing_array_list.addManyAsSlice(N);
-        for (0..N) |i| buffer[i] = @intCast(i);
 
-        if (N < 1_000_000) // flushing big buffers makes the benchmark run super slowly
-            clflush(Tp, buffer);
+        buffer_array_list.clearRetainingCapacity();
+        const buffer = try buffer_array_list.addManyAsSlice(N);
+
+        for (0..N) |i| buffer[i] = @intCast(i);
+        clflush(Tp, buffer);
+
+        // uniform over whole range
+        // for (queries) |*e| e.* = rand.intRangeAtMost(Tp, 0, @intCast(N));
+
+        // uniform over first 16
+        // for (queries) |*e| e.* = rand.intRangeAtMost(Tp, 0, @intCast(@min(N, 16)));
+
+        // first
+        // for (queries) |*e| e.* = 0;
+
+        // one past the end
+        for (queries) |*e| e.* = @intCast(N);
+
+
+        // mix of first, one past the end, and uniform
+        // for (queries) |*e| e.* = switch (rand.int(u2)) {
+        //     0 => 0,
+        //     1, 2 => rand.intRangeAtMost(Tp, 0, @intCast(N)),
+        //     3 => @intCast(N),
+        // };
 
         var new_i: u32 = 0;
         var new_ns: usize = 0;
-        while (new_i < iterations_per_byte + warmup_iterations) : (new_i += 1) {
+        while (new_i < iterations_per_byte + warmup_iterations) : (new_i += repeats) {
             const start = std.time.Instant.now() catch unreachable;
 
-            for (0..repeats) |_|
+            for (0..repeats) |offs| {
                 std.mem.doNotOptimizeAway(partitionPointNew(
                     Tp,
                     buffer,
-                    rand.intRangeAtMost(Tp, 0, @intCast(N)),
+                    queries[new_i + offs],
                     lower,
                 ));
+            }
 
             const end = std.time.Instant.now() catch unreachable;
             if (new_i > warmup_iterations) new_ns += end.since(start);
         }
 
         for (0..N) |i| buffer[i] = @intCast(i);
-        if (N < 1_000_000) // flushing big buffers makes the benchmark run super slowly, doesnt seem to affect result
-            clflush(Tp, buffer);
+        clflush(Tp, buffer);
 
         var old_i: u32 = 0;
         var old_ns: usize = 0;
-        while (old_i < iterations_per_byte + warmup_iterations) : (old_i += 1) {
+        while (old_i < iterations_per_byte + warmup_iterations) : (old_i += repeats) {
             const start = std.time.Instant.now() catch unreachable;
 
-            for (0..repeats) |_|
+            for (0..repeats) |offs| {
                 std.mem.doNotOptimizeAway(partitionPoint(
                     Tp,
                     buffer,
-                    rand.intRangeAtMost(Tp, 0, @intCast(N)),
+                    queries[old_i + offs],
                     lower,
                 ));
+            }
 
             const end = std.time.Instant.now() catch unreachable;
-            if (new_i > warmup_iterations) old_ns += end.since(start);
+            if (old_i > warmup_iterations) old_ns += end.since(start);
         }
 
-        const new_cycles_per_byte = @as(f64, @floatFromInt(new_ns)) / @as(f64, @floatFromInt(repeats * iterations_per_byte));
-        const old_cycles_per_byte = @as(f64, @floatFromInt(old_ns)) / @as(f64, @floatFromInt(repeats * iterations_per_byte));
+        const new_cycles_per_byte = @as(f64, @floatFromInt(new_ns)) / @as(f64, @floatFromInt(iterations_per_byte));
+        const old_cycles_per_byte = @as(f64, @floatFromInt(old_ns)) / @as(f64, @floatFromInt(iterations_per_byte));
 
         new_sum_logs += @log(new_cycles_per_byte);
         old_sum_logs += @log(old_cycles_per_byte);
@@ -215,7 +246,7 @@ pub fn main() !void {
     const time_reduction = (old_geo_mean - new_geo_mean) / old_geo_mean * 100;
     const speedup_percent = old_geo_mean / new_geo_mean * 100 - 100;
 
-    std.debug.print("speedup: {d:.4}% (time taken reduced by average of {d:.4}%) (NOTE: *almost* meaningless metric, see graph)\n", .{speedup_percent, time_reduction});
+    std.debug.print("speedup: {d:.0}% (time reduced by average of {d:.0}%) (NOTE: *almost* meaningless metric, see graph)\n", .{ speedup_percent, time_reduction });
 }
 
 inline fn rdtsc() usize {
